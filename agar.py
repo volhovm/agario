@@ -23,7 +23,7 @@ except:
 # Surface Definitions
 MAIN_SURFACE = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
 SCOREBOARD_SURFACE = pygame.Surface((95,25),pygame.SRCALPHA)
-LEADERBOARD_SURFACE = pygame.Surface((155,278),pygame.SRCALPHA) 
+LEADERBOARD_SURFACE = pygame.Surface((155,278),pygame.SRCALPHA)
 SCOREBOARD_SURFACE.fill((50,50,50,80))
 LEADERBOARD_SURFACE.fill((50,50,50,80))
 
@@ -59,7 +59,7 @@ class Painter:
         for drawing in self.paintings:
             drawing.draw()
 
-        
+
 class Camera:
     """Used to represent the concept of POV.
     """
@@ -70,9 +70,9 @@ class Camera:
         self.height = SCREEN_HEIGHT
         self.zoom = 0.5
 
-    
+
     def centre(self,blobOrPos):
-        """Makes sure that the given object will be at the center of player's view. 
+        """Makes sure that the given object will be at the center of player's view.
         Zoom is taken into account as well.
         """
         if isinstance(blobOrPos, Player):
@@ -117,10 +117,10 @@ class Grid(Drawable):
 class HUD(Drawable):
     """Used to represent all necessary Head-Up Display information on screen.
     """
-    
+
     def __init__(self, surface, camera):
         super().__init__(surface, camera)
-        
+
     def draw(self):
         w,h = font.size("Score: "+str(int(blob.mass*2))+" ")
         MAIN_SURFACE.blit(pygame.transform.scale(SCOREBOARD_SURFACE, (w, h)),
@@ -159,7 +159,7 @@ class Player(Drawable):
     (6,254,13)]
 
     FONT_COLOR = (50, 50, 50)
-    
+
     def __init__(self, surface, camera, name = ""):
         super().__init__(surface, camera)
         self.x = random.randint(100,400)
@@ -189,7 +189,7 @@ class Player(Drawable):
     def move(self):
         """Updates players current position depending on player's mouse relative position.
         """
-        
+
         dX, dY = pygame.mouse.get_pos()
         # Find the angle from the center of the screen to the mouse in radians [-Pi, Pi]
         rotation = math.atan2(dY - float(SCREEN_HEIGHT)/2, dX - float(SCREEN_WIDTH)/2)
@@ -226,7 +226,7 @@ class Player(Drawable):
         zoom = self.camera.zoom
         x, y = self.camera.x, self.camera.y
         center = (int(self.x*zoom + x), int(self.y*zoom + y))
-        
+
         # Draw the ouline of the player as a darker, bigger circle
         pygame.draw.circle(self.surface, self.outlineColor, center, int((self.mass/2 + 3)*zoom))
         # Draw the actual player as a circle
@@ -253,7 +253,7 @@ class Cell(Drawable): # Semantically, this is a parent class of player
     (7,255,182),
     (255,6,86),
     (147,7,255)]
-    
+
     def __init__(self, surface, camera):
         super().__init__(surface, camera)
         self.x = random.randint(20,1980)
@@ -268,7 +268,7 @@ class Cell(Drawable): # Semantically, this is a parent class of player
         x,y = self.camera.x, self.camera.y
         center = (int(self.x*zoom + x), int(self.y*zoom + y))
         pygame.draw.circle(self.surface, self.color, center, int(self.mass*zoom))
-        
+
 class CellList(Drawable):
     """Used to group and organize cells.
     It is also keeping track of living/ dead cells.
@@ -284,7 +284,7 @@ class CellList(Drawable):
         for cell in self.list:
             cell.draw()
 
-    
+
 
 # Initialize essential entities
 cam = Camera()
@@ -302,9 +302,9 @@ painter.add(hud)
 
 # Game main loop
 while(True):
-    
+
     clock.tick(70)
-    
+
     for e in pygame.event.get():
         if(e.type == pygame.KEYDOWN):
             if(e.key == pygame.K_ESCAPE):
