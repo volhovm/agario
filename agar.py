@@ -161,6 +161,7 @@ class Player(Drawable):
     FONT_COLOR = (50, 50, 50)
 
 
+    # Add to existing Player class
     def __init__(self, surface, camera, name="", initmass=20):
         super().__init__(surface, camera)
         self.x = random.randint(100,400)
@@ -176,32 +177,23 @@ class Player(Drawable):
         else: self.name = "Anonymous"
         self.absorbed = []  # List to store absorbed players
         self.original_mass = initmass  # Track original mass for scaling
+        self.hunger = 0  # Hunger level from 0 to 100
+        self.hunger_rate = 0.05  # Base hunger rate
 
-    def absorb(self, player):
-        """Add a player to the absorbed list"""
-        # Store relevant info about the absorbed player
-        absorbed_info = {
-            'color': player.color,
-            'outline_color': player.outlineColor,
-            'name': player.name,
-            'mass': player.mass,
-            'original_mass': player.mass,  # Store original mass for scaling
-            'angle': random.uniform(0, 2 * math.pi),  # Random position inside
-            'distance_factor': random.uniform(0.2, 0.7)  # How far from center (0-1)
-        }
-        self.absorbed.append(absorbed_info)
+    def update_hunger(self):
+        # Bigger nodes get hungry faster
+        hunger_increase = self.hunger_rate * (self.mass / 50)
+        self.hunger += hunger_increase
 
-    def add_mass(self, amount):
-        """Add mass to the player and scale all absorbed players proportionally"""
-        old_mass = self.mass
-        self.mass += amount
+        # Cap hunger at 100
+        if self.hunger > 100:
+            self.hunger = 100
 
-        # Scale factor based on how much the player grew
-        scale_factor = self.mass / old_mass
-
-        # Scale all absorbed players
-        for absorbed in self.absorbed:
-            absorbed['mass'] *= scale_factor
+        # Lose mass when hungry
+        if self.hunger > 50:
+            # More hunger = more mass loss
+            mass_loss = (self.hunger - 50) * 0.01
+            self.mass = max(20, self.mass - mass_loss)  # Don't go below minimum mass
 
     def draw(self):
         """Draws the player as an outlined circle with absorbed players inside."""
@@ -212,8 +204,20 @@ class Player(Drawable):
 
         # Draw the outline of the player as a darker, bigger circle
         pygame.draw.circle(self.surface, self.outlineColor, center, int((self.mass/2 + 3)*zoom))
+
         # Draw the actual player as a circle
-        pygame.draw.circle(self.surface, self.color, center, radius)
+        # Modify color based on hunger (redder when hungry)
+        if self.hunger > 50:
+            hunger_factor = (self.hunger - 50) / 50  # 0 to 1
+            color = (
+                min(255, self.color[0] + int(hunger_factor * 100)),
+                max(0, self.color[1] - int(hunger_factor * 100)),
+                max(0, self.color[2] - int(hunger_factor * 100))
+            )
+        else:
+            color = self.color
+
+        pygame.draw.circle(self.surface, color, center, radius)
 
         # Draw absorbed players as smaller circles inside
         for absorbed in self.absorbed:
@@ -236,7 +240,6 @@ class Player(Drawable):
             # Draw a small name indicator if there's enough space
             if inner_radius > 10:
                 small_font = pygame.font.SysFont('Ubuntu', 10, True)
-                #name_surface = small_font.render(absorbed['name'][:1], True, Player.FONT_COLOR)
                 name_surface = small_font.render(absorbed['name'], True, Player.FONT_COLOR)
                 name_rect = name_surface.get_rect(center=inner_center)
                 self.surface.blit(name_surface, name_rect)
@@ -246,6 +249,13 @@ class Player(Drawable):
         drawText(self.name, (self.x*zoom + x - int(fw/2), self.y*zoom + y - int(fh/2)),
                  Player.FONT_COLOR)
 
+        # Draw hunger indicator if hungry
+        if self.hunger > 50:
+            hunger_text = f"Hungry! ({int(self.hunger)}%)"
+            hw, hh = font.size(hunger_text)
+            drawText(hunger_text,
+                    (self.x*zoom + x - int(hw/2), self.y*zoom + y - int(fh/2) - 20),
+                    (255, 0, 0))
 
     def collisionDetection(self, edibles):
         """Detects cells being inside the radius of current player.
@@ -254,7 +264,45 @@ class Player(Drawable):
         for edible in edibles:
             if(getDistance((edible.x, edible.y), (self.x,self.y)) <= self.mass/2):
                 self.add_mass(0.5)  # Use add_mass instead of directly modifying mass
+                # Reduce hunger when eating
+                self.hunger = max(0, self.hunger - 2)
                 edibles.remove(edible)
+
+
+    def absorb(self, player):
+        """Add a player to the absorbed list"""
+        # Store relevant info about the absorbed player
+        absorbed_info = {
+            'color': player.color,
+            'outline_color': player.outlineColor,
+            'name': player.name,
+            'mass': player.mass,
+            'original_mass': player.mass,  # Store original mass for scaling
+            'angle': random.uniform(0, 2 * math.pi),  # Random position inside
+            'distance_factor': random.uniform(0.2, 0.7)  # How far from center (0-1)
+        }
+        self.absorbed.append(absorbed_info)
+
+        # Also absorb any players that were absorbed by the eaten player
+        for absorbed in player.absorbed:
+            # Create a new copy of the absorbed info with a new random position
+            new_absorbed = absorbed.copy()
+            new_absorbed['angle'] = random.uniform(0, 2 * math.pi)
+            new_absorbed['distance_factor'] = random.uniform(0.2, 0.7)
+            self.absorbed.append(new_absorbed)
+
+    def add_mass(self, amount):
+        """Add mass to the player and scale all absorbed players proportionally"""
+        old_mass = self.mass
+        self.mass += amount
+
+        # Scale factor based on how much the player grew
+        scale_factor = self.mass / old_mass
+
+        # Scale all absorbed players
+        for absorbed in self.absorbed:
+            absorbed['mass'] *= scale_factor
+
 
     def move(self):
         """Updates player's position based on arrow key inputs.
@@ -324,6 +372,7 @@ class Cell(Drawable): # Semantically, this is a parent class of player
         center = (int(self.x*zoom + x), int(self.y*zoom + y))
         pygame.draw.circle(self.surface, self.color, center, int(self.mass*zoom))
 
+
 class CellList(Drawable):
     """Used to group and organize cells.
     It is also keeping track of living/ dead cells.
@@ -332,12 +381,30 @@ class CellList(Drawable):
     def __init__(self, surface, camera, numOfCells):
         super().__init__(surface, camera)
         self.count = numOfCells
+        self.max_cells = numOfCells  # Maximum number of cells
         self.list = []
+        self.spawn_timer = 0  # Timer for spawning new cells
+        self.spawn_rate = 10  # Cells to spawn per update
         for i in range(self.count): self.list.append(Cell(self.surface, self.camera))
 
     def draw(self):
         for cell in self.list:
             cell.draw()
+
+    def update(self):
+        """Respawn food cells if below maximum count"""
+        self.spawn_timer += 1
+
+        # Respawn food every 5 frames
+        if self.spawn_timer >= 5:
+            self.spawn_timer = 0
+
+            # Calculate how many cells to spawn
+            cells_to_spawn = min(self.spawn_rate, self.max_cells - len(self.list))
+
+            # Spawn new cells
+            for _ in range(cells_to_spawn):
+                self.list.append(Cell(self.surface, self.camera))
 
 
 class Bot(Player):
@@ -392,6 +459,12 @@ class Bot(Player):
             # Move toward target
             self.x += dx * self.speed
             self.y += dy * self.speed
+
+        # Hungrier bots move faster to find food
+        if self.hunger > 70:
+            self.speed = 5
+        else:
+            self.speed = 4
 
 
 
@@ -462,6 +535,8 @@ while(True):
 
     clock.tick(50)
 
+    cells.update()
+
     for e in pygame.event.get():
         if(e.type == pygame.KEYDOWN):
             if(e.key == pygame.K_ESCAPE):
@@ -477,10 +552,13 @@ while(True):
             quit()
 
     for bot in bots:
+        bot.update_hunger()
         bot.find_target(cells.list, [blob] + bots)
         bot.move()
         bot.collisionDetection(cells.list)
 
+
+    blob.update_hunger()
     blob.move()
     blob.collisionDetection(cells.list)
 
@@ -498,6 +576,7 @@ while(True):
             # Bot was eaten, remove and respawn
             bots.remove(player)
             painter.paintings.remove(player)
+
 
     cam.update(blob)
     MAIN_SURFACE.fill((242,251,255))
