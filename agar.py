@@ -160,7 +160,8 @@ class Player(Drawable):
 
     FONT_COLOR = (50, 50, 50)
 
-    def __init__(self, surface, camera, name = "", initmass = 20):
+
+    def __init__(self, surface, camera, name="", initmass=20):
         super().__init__(surface, camera)
         self.x = random.randint(100,400)
         self.y = random.randint(100,400)
@@ -173,7 +174,77 @@ class Player(Drawable):
             int(col[2]-col[2]/3))
         if name: self.name = name
         else: self.name = "Anonymous"
-        self.pieces = []
+        self.absorbed = []  # List to store absorbed players
+        self.original_mass = initmass  # Track original mass for scaling
+
+    def absorb(self, player):
+        """Add a player to the absorbed list"""
+        # Store relevant info about the absorbed player
+        absorbed_info = {
+            'color': player.color,
+            'outline_color': player.outlineColor,
+            'name': player.name,
+            'mass': player.mass,
+            'original_mass': player.mass,  # Store original mass for scaling
+            'angle': random.uniform(0, 2 * math.pi),  # Random position inside
+            'distance_factor': random.uniform(0.2, 0.7)  # How far from center (0-1)
+        }
+        self.absorbed.append(absorbed_info)
+
+    def add_mass(self, amount):
+        """Add mass to the player and scale all absorbed players proportionally"""
+        old_mass = self.mass
+        self.mass += amount
+
+        # Scale factor based on how much the player grew
+        scale_factor = self.mass / old_mass
+
+        # Scale all absorbed players
+        for absorbed in self.absorbed:
+            absorbed['mass'] *= scale_factor
+
+    def draw(self):
+        """Draws the player as an outlined circle with absorbed players inside."""
+        zoom = self.camera.zoom
+        x, y = self.camera.x, self.camera.y
+        center = (int(self.x*zoom + x), int(self.y*zoom + y))
+        radius = int(self.mass/2*zoom)
+
+        # Draw the outline of the player as a darker, bigger circle
+        pygame.draw.circle(self.surface, self.outlineColor, center, int((self.mass/2 + 3)*zoom))
+        # Draw the actual player as a circle
+        pygame.draw.circle(self.surface, self.color, center, radius)
+
+        # Draw absorbed players as smaller circles inside
+        for absorbed in self.absorbed:
+            # Calculate position inside the main circle
+            # Size is proportional to original mass but scaled with player growth
+            inner_radius = min(absorbed['mass'] / 3, self.mass / 4) * zoom
+
+            # Maintain relative position as player grows
+            distance = absorbed['distance_factor'] * (radius - inner_radius)
+            inner_x = center[0] + math.cos(absorbed['angle']) * distance
+            inner_y = center[1] + math.sin(absorbed['angle']) * distance
+
+            # Draw the absorbed player
+            inner_center = (int(inner_x), int(inner_y))
+            pygame.draw.circle(self.surface, absorbed['outline_color'], inner_center,
+                              int(inner_radius + 2))
+            pygame.draw.circle(self.surface, absorbed['color'], inner_center,
+                              int(inner_radius))
+
+            # Draw a small name indicator if there's enough space
+            if inner_radius > 10:
+                small_font = pygame.font.SysFont('Ubuntu', 10, True)
+                #name_surface = small_font.render(absorbed['name'][:1], True, Player.FONT_COLOR)
+                name_surface = small_font.render(absorbed['name'], True, Player.FONT_COLOR)
+                name_rect = name_surface.get_rect(center=inner_center)
+                self.surface.blit(name_surface, name_rect)
+
+        # Draw player's name
+        fw, fh = font.size(self.name)
+        drawText(self.name, (self.x*zoom + x - int(fw/2), self.y*zoom + y - int(fh/2)),
+                 Player.FONT_COLOR)
 
 
     def collisionDetection(self, edibles):
@@ -182,9 +253,8 @@ class Player(Drawable):
         """
         for edible in edibles:
             if(getDistance((edible.x, edible.y), (self.x,self.y)) <= self.mass/2):
-                self.mass+=0.5
+                self.add_mass(0.5)  # Use add_mass instead of directly modifying mass
                 edibles.remove(edible)
-
 
     def move(self):
         """Updates player's position based on arrow key inputs.
@@ -210,30 +280,6 @@ class Player(Drawable):
         self.y += vy
 
 
-    #def move(self):
-    #    """Updates players current position depending on player's mouse relative position.
-    #    """
-
-    #    dX, dY = pygame.mouse.get_pos()
-    #    # Find the angle from the center of the screen to the mouse in radians [-Pi, Pi]
-    #    rotation = math.atan2(dY - float(SCREEN_HEIGHT)/2, dX - float(SCREEN_WIDTH)/2)
-    #    # Convert radians to degrees [-180, 180]
-    #    rotation *= 180/math.pi
-    #    # Normalize to [-1, 1]
-    #    # First project the point from unit circle to X-axis
-    #    # Then map resulting interval to [-1, 1]
-    #    normalized = (90 - math.fabs(rotation))/90
-    #    vx = self.speed*normalized
-    #    vy = 0
-    #    if rotation < 0:
-    #        vy = -self.speed + math.fabs(vx)
-    #    else:
-    #        vy = self.speed - math.fabs(vx)
-    #    tmpX = self.x + vx
-    #    tmpY = self.y + vy
-    #    self.x = tmpX
-    #    self.y = tmpY
-
     def feed(self):
         """Unsupported feature.
         """
@@ -244,21 +290,6 @@ class Player(Drawable):
         """
         pass
 
-    def draw(self):
-        """Draws the player as an outlined circle.
-        """
-        zoom = self.camera.zoom
-        x, y = self.camera.x, self.camera.y
-        center = (int(self.x*zoom + x), int(self.y*zoom + y))
-
-        # Draw the ouline of the player as a darker, bigger circle
-        pygame.draw.circle(self.surface, self.outlineColor, center, int((self.mass/2 + 3)*zoom))
-        # Draw the actual player as a circle
-        pygame.draw.circle(self.surface, self.color, center, int(self.mass/2*zoom))
-        # Draw player's name
-        fw, fh = font.size(self.name)
-        drawText(self.name, (self.x*zoom + x - int(fw/2), self.y*zoom + y - int(fh/2)),
-                 Player.FONT_COLOR)
 
 class Cell(Drawable): # Semantically, this is a parent class of player
     """Used to represent the fundamental entity of game.
@@ -363,6 +394,7 @@ class Bot(Player):
             self.y += dy * self.speed
 
 
+
 def check_player_collisions(players):
     """Check if players can eat each other based on size and proximity"""
     to_remove = []
@@ -376,7 +408,6 @@ def check_player_collisions(players):
             if i == j:
                 continue
 
-
             if player2 in to_remove:
                 continue
 
@@ -388,8 +419,11 @@ def check_player_collisions(players):
             if (player1.mass > player2.mass * 1.1 and
                 distance < player1.mass/2 - player2.mass/4):
 
+                # Player1 absorbs player2 (visually)
+                player1.absorb(player2)
+
                 # Player1 gains a portion of player2's mass
-                player1.mass += player2.mass * 0.8
+                player1.add_mass(player2.mass * 0.8)
 
                 # Mark player2 for removal
                 if player2 not in to_remove:
@@ -399,13 +433,12 @@ def check_player_collisions(players):
 
 
 
-
 # Initialize essential entities
 cam = Camera()
 
 grid = Grid(MAIN_SURFACE, cam)
 cells = CellList(MAIN_SURFACE, cam, 2000)
-blob = Player(MAIN_SURFACE, cam, "GeoVas", initmass=30)
+blob = Player(MAIN_SURFACE, cam, "GeoVas", initmass=80)
 hud = HUD(MAIN_SURFACE, cam)
 
 painter = Painter()
