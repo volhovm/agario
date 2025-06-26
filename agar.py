@@ -160,11 +160,11 @@ class Player(Drawable):
 
     FONT_COLOR = (50, 50, 50)
 
-    def __init__(self, surface, camera, name = ""):
+    def __init__(self, surface, camera, name = "", initmass = 20):
         super().__init__(surface, camera)
         self.x = random.randint(100,400)
         self.y = random.randint(100,400)
-        self.mass = 20
+        self.mass = initmass
         self.speed = 4
         self.color = col = random.choice(Player.COLOR_LIST)
         self.outlineColor = (
@@ -187,28 +187,52 @@ class Player(Drawable):
 
 
     def move(self):
-        """Updates players current position depending on player's mouse relative position.
+        """Updates player's position based on arrow key inputs.
         """
+        keys = pygame.key.get_pressed()
 
-        dX, dY = pygame.mouse.get_pos()
-        # Find the angle from the center of the screen to the mouse in radians [-Pi, Pi]
-        rotation = math.atan2(dY - float(SCREEN_HEIGHT)/2, dX - float(SCREEN_WIDTH)/2)
-        # Convert radians to degrees [-180, 180]
-        rotation *= 180/math.pi
-        # Normalize to [-1, 1]
-        # First project the point from unit circle to X-axis
-        # Then map resulting interval to [-1, 1]
-        normalized = (90 - math.fabs(rotation))/90
-        vx = self.speed*normalized
+        # Set movement speed
+        vx = 0
         vy = 0
-        if rotation < 0:
-            vy = -self.speed + math.fabs(vx)
-        else:
-            vy = self.speed - math.fabs(vx)
-        tmpX = self.x + vx
-        tmpY = self.y + vy
-        self.x = tmpX
-        self.y = tmpY
+
+        # Check which keys are pressed and update velocity
+        if keys[pygame.K_LEFT]:
+            vx = -self.speed
+        if keys[pygame.K_RIGHT]:
+            vx = self.speed
+        if keys[pygame.K_UP]:
+            vy = -self.speed
+        if keys[pygame.K_DOWN]:
+            vy = self.speed
+
+        # Update position
+        self.x += vx
+        self.y += vy
+
+
+    #def move(self):
+    #    """Updates players current position depending on player's mouse relative position.
+    #    """
+
+    #    dX, dY = pygame.mouse.get_pos()
+    #    # Find the angle from the center of the screen to the mouse in radians [-Pi, Pi]
+    #    rotation = math.atan2(dY - float(SCREEN_HEIGHT)/2, dX - float(SCREEN_WIDTH)/2)
+    #    # Convert radians to degrees [-180, 180]
+    #    rotation *= 180/math.pi
+    #    # Normalize to [-1, 1]
+    #    # First project the point from unit circle to X-axis
+    #    # Then map resulting interval to [-1, 1]
+    #    normalized = (90 - math.fabs(rotation))/90
+    #    vx = self.speed*normalized
+    #    vy = 0
+    #    if rotation < 0:
+    #        vy = -self.speed + math.fabs(vx)
+    #    else:
+    #        vy = self.speed - math.fabs(vx)
+    #    tmpX = self.x + vx
+    #    tmpY = self.y + vy
+    #    self.x = tmpX
+    #    self.y = tmpY
 
     def feed(self):
         """Unsupported feature.
@@ -285,13 +309,103 @@ class CellList(Drawable):
             cell.draw()
 
 
+class Bot(Player):
+    """AI-controlled player that follows food and hunts smaller players"""
+
+    def __init__(self, surface, camera, name="Bot"):
+        super().__init__(surface, camera, name)
+        self.target = None
+        self.decision_cooldown = 0
+
+    def find_target(self, cells, players):
+        """Find closest food or smaller player to chase"""
+        # Reset target periodically to reassess situation
+        if self.target == None or self.decision_cooldown <= 0:
+            self.decision_cooldown = 5  # Update target every 30 frames
+
+            closest_food = None
+            min_food_dist = float('inf')
+
+            # Find closest food
+            for cell in cells:
+                dist = getDistance((self.x, self.y), (cell.x, cell.y))
+                if dist < min_food_dist:
+                    min_food_dist = dist
+                    closest_food = cell
+
+            # Sometimes look for players to eat (if they're smaller)
+            if random.random() < 0.3:  # 30% chance to look for players
+                for player in players:
+                    if player != self and player.mass < self.mass * 0.9:  # Only chase if significantly smaller
+                        dist = getDistance((self.x, self.y), (player.x, player.y))
+                        if dist < min_food_dist * 1.5:  # Prefer closer players
+                            min_food_dist = dist
+                            closest_food = player
+
+            self.target = closest_food
+        else:
+            self.decision_cooldown -= 1
+
+    def move(self):
+        """Move toward current target"""
+        if self.target:
+            # Calculate direction to target
+            dx = self.target.x - self.x
+            dy = self.target.y - self.y
+
+            # Normalize direction
+            length = max(0.01, math.sqrt(dx*dx + dy*dy))
+            dx /= length
+            dy /= length
+
+            # Move toward target
+            self.x += dx * self.speed
+            self.y += dy * self.speed
+
+
+def check_player_collisions(players):
+    """Check if players can eat each other based on size and proximity"""
+    to_remove = []
+
+    for i, player1 in enumerate(players):
+        if player1 in to_remove:
+            continue
+
+        for j, player2 in enumerate(players):
+            # Skip self-comparison
+            if i == j:
+                continue
+
+
+            if player2 in to_remove:
+                continue
+
+            # Calculate distance between players
+            distance = getDistance((player1.x, player1.y), (player2.x, player2.y))
+
+            # Check if player1 can eat player2
+            # Player can eat another if it's 10% bigger and centers are close enough
+            if (player1.mass > player2.mass * 1.1 and
+                distance < player1.mass/2 - player2.mass/4):
+
+                # Player1 gains a portion of player2's mass
+                player1.mass += player2.mass * 0.8
+
+                # Mark player2 for removal
+                if player2 not in to_remove:
+                    to_remove.append(player2)
+
+    return to_remove
+
+
+
 
 # Initialize essential entities
 cam = Camera()
 
 grid = Grid(MAIN_SURFACE, cam)
 cells = CellList(MAIN_SURFACE, cam, 2000)
-blob = Player(MAIN_SURFACE, cam, "GeoVas")
+blob = Player(MAIN_SURFACE, cam, "GeoVas", initmass=30)
 hud = HUD(MAIN_SURFACE, cam)
 
 painter = Painter()
@@ -300,10 +414,20 @@ painter.add(cells)
 painter.add(blob)
 painter.add(hud)
 
+bots = []
+num_bots = 5  # Number of bots to add
+
+# Create bots
+for i in range(num_bots):
+    bot = Bot(MAIN_SURFACE, cam, f"Bot {i+1}")
+    bots.append(bot)
+    painter.add(bot)  # Add to painter to be drawn
+
+
 # Game main loop
 while(True):
 
-    clock.tick(70)
+    clock.tick(50)
 
     for e in pygame.event.get():
         if(e.type == pygame.KEYDOWN):
@@ -319,8 +443,29 @@ while(True):
             pygame.quit()
             quit()
 
+    for bot in bots:
+        bot.find_target(cells.list, [blob] + bots)
+        bot.move()
+        bot.collisionDetection(cells.list)
+
     blob.move()
     blob.collisionDetection(cells.list)
+
+    all_players = [blob] + bots
+    eaten_players = check_player_collisions(all_players)
+
+    # Check eaten
+    for player in eaten_players:
+        if player == blob:
+            print("Game Over! You were eaten!")
+            pygame.quit()
+            quit()
+        elif player in bots:
+            print("Removing player", player)
+            # Bot was eaten, remove and respawn
+            bots.remove(player)
+            painter.paintings.remove(player)
+
     cam.update(blob)
     MAIN_SURFACE.fill((242,251,255))
     # Uncomment next line to get dark-theme
